@@ -4,129 +4,90 @@ clc, clear, close all;
 
 %% Visualize Data
 
-fprintf('Loading and Visualizing Data ...\n\n');
+fprintf('Loading and Visualizing Training Data ...\n\n');
 
-cv1=imageDatastore('archive\Face Mask Dataset\Train\Train_WithMask');
-cv2=imageDatastore('archive\Face Mask Dataset\Train\Train_WithoutMask');
-rawPos = readall(cv1);
-rawNeg = readall(cv2);
+%creating an imageDataStore to hold the WithMask and WithoutMask training
+%sets
 
-% Clean the data set
-index=1;
-while index < 100
-    if size(rawPos{index}, 3) ~= 3 % Remove images that do not have 3 layers
-        rawPos(index) = [];
-    else
-        rawPos{index} = imresize(rawPos{index}, [227,227]); % Resize images to 227x227
-        index = index + 1;
-    end
-end
-index=1;
-while index < 100
-    if size(rawNeg{index}, 3) ~= 3
-        rawNeg(index) = [];
-    else
-        rawNeg{index} = imresize(rawNeg{index}, [227,227]);
-        index = index + 1;
-    end
-end
+cv1=imageDatastore('archive\Face Mask Dataset\Train\WithMask');
+cv2=imageDatastore('archive\Face Mask Dataset\Train\WithoutMask');
 
-% Display randomly selected images
-randvec=randi(length(rawNeg),[1,16]);
+%create vector to pull 16 random test images from cv1
+randvec=randi(length(cv1.Files),[1,16]);
+%plot random image vector on a subplot
 figure;
 for i=1:length(randvec)
     subplot(length(randvec)/4,length(randvec)/4,i);
-    imshow(rawNeg{randvec(i)});
+    imshow(readimage(cv1,i));
     sgtitle('Without Mask');
 end
 
-randvec2=randi(length(rawPos),[1,16]);
+%create vector to pull 16 random test images from cv2
+randvec2=randi(length(cv2.Files),[1,16]);
+%plot random image vector on a subplot
 figure(2);
 for i=1:length(randvec2)
     subplot(length(randvec2)/4,length(randvec2)/4,i);
-    imshow(rawPos{randvec2(i)});
+    imshow(readimage(cv2,i));
     sgtitle('With Mask');
 end
 
 %% Assess and Report Network Accuracy
 
+%create imageDataStore to hold testData
 testData = imageDatastore('archive\Face Mask Dataset\Test', 'IncludeSubfolders', true, 'LabelSource', 'foldernames');
-load('resnet.mat');
-netimg=imread('resnet-50.png');
-imshow(netimg);
-title('ResNet-50');
+
 
 fprintf('Running test data on resnet...\n\n');
-nn_accuracy = zeros(1,1); % Preallocate
+load('squeezenet');
 
+%resize test data to fit squeezenet (227,227)
 testData.ReadFcn=@(loc) imresize(imread(loc),[227,227]);
 
+%classify testData using the network
 predictions = classify(trainedNetwork_1,testData);
-testLabels = testData.Labels;
-nn_accuracy = mean(predictions == testLabels);
 
+%get labels for the data
+testLabels = testData.Labels;
+
+%logical array of correct predictions 
 log_ar = predictions==testLabels;
-figure(2);
+
+%accuracy = average of correct predictions 
+nn_accuracy = mean(log_ar);
+
+
+fprintf("Press enter to step through wrong predictions.\n");
+
+%step through the zeros (incorrect predictions) in the results
+figure(3);
 for i=1:length(log_ar)
     if log_ar(i)== 0
         bad = readimage(testData,i);
         imshow(bad)
         title(cellstr(predictions(i)));        
         pause;
-        clf(figure(2))
+        clf(figure(3))
     end
     
 end
-close(figure(2));
 
-fprintf("The accuracy of ResNet-50 is %.2f[%%] \n",100*nn_accuracy);
+close(figure(3));
 
-figure;
-nn_string = "ResNet-50";
-xxs = categorical(nn_string);
-xxs = reordercats(xxs,nn_string);
-bar(xxs,nn_accuracy*100);
-ylabel('Accuracy [%]');
-ylim([0,100])
-
-			
-
+fprintf("The accuracy of the network is %.2f[%%] \n",100*nn_accuracy);
 %% Classify an CT Image
 
 fprintf('Select a test image.\n\n');
+
+%get path of selected file and read the image
 imagePath = imgetfile;
 testImage = imread(imagePath);
 
-figure;
+%predict the test image,resize test image to fit nn
+pred = classify(trainedNetwork_1,imresize(testImage,[227, 227]));
+
+%show test img with prediction
+figure(4);
 imshow(testImage);
-title('Classifying...');
-pred=categorical({});
+title(cellstr(pred));        
 
-pred = predict(trainedNetwork_1,imresize(testImage,[227, 227]),'ReturnCategorical',true);
-
-res = categories(pred);
-if length(res) == 1
-    title(res);
-    name=res;
-else
-    freq = countcats(pred);
-    if freq(1) > freq(2)
-        title(res{1});
-        name=res{1};
-    else
-        title(res{2});
-        name=res{2};
-    end
-end
-
-x=[];
-for i=1:length(pred)
-    if pred(i)=='WithMask'
-        x(i)=1;
-    else
-        x(i)=0;
-    end
-end
-
-
-%saveresults(name);
